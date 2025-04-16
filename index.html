@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<!-- Define o tipo de documento como HTML5 -->
+<html lang="pt-BR">
+<!-- Define o idioma da página como português brasileiro -->
+<head>
+    <!-- Cabeçalho do documento - metadados e recursos -->
+    <meta charset="UTF-8">
+    <!-- Define a codificação de caracteres como UTF-8 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Configura a viewport para responsividade -->
+    <title>CRUD com IndexedDB</title>
+    <!-- Título da página exibido na aba do navegador -->
+    
+    <style>
+        /* Estilos CSS para toda a aplicação */
+        body {
+            font-family: Arial, sans-serif;  /* Fonte padrão */
+            max-width: 800px;               /* Largura máxima do conteúdo */
+            margin: 0 auto;                 /* Centraliza na página */
+            padding: 20px;                  /* Espaçamento interno */
+        }
+        table {
+            width: 100%;                    /* Tabela ocupa 100% do container */
+            border-collapse: collapse;      /* Bordas colapsadas */
+            margin-top: 20px;               /* Espaço acima da tabela */
+        }
+        th, td {
+            border: 1px solid #ddd;         /* Bordas cinza claro */
+            padding: 8px;                   /* Espaçamento interno */
+            text-align: left;               /* Alinhamento do texto */
+        }
+        th {
+            background-color: #f2f2f2;      /* Cor de fundo do cabeçalho */
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;      /* Zebrado - linhas pares com fundo diferente */
+        }
+        .form-group {
+            margin-bottom: 15px;            /* Espaço entre grupos de formulário */
+        }
+        label {
+            display: block;                 /* Label em bloco (uma linha só) */
+            margin-bottom: 5px;             /* Espaço abaixo do label */
+            font-weight: bold;              /* Texto em negrito */
+        }
+        input[type="text"],
+        input[type="email"] {
+            width: 100%;                   /* Inputs ocupam 100% da largura */
+            padding: 8px;                   /* Espaçamento interno */
+            box-sizing: border-box;         /* Modelo de caixa inclui padding */
+        }
+        button {
+            padding: 8px 15px;             /* Espaçamento interno */
+            background-color: #4CAF50;      /* Cor de fundo verde */
+            color: white;                   /* Texto branco */
+            border: none;                   /* Sem borda */
+            cursor: pointer;                /* Cursor de ponteiro */
+            margin-right: 5px;              /* Espaço à direita */
+        }
+        button:hover {
+            background-color: #45a049;      /* Cor ao passar o mouse */
+        }
+        .btn-danger {
+            background-color: #f44336;     /* Botão vermelho para ações perigosas */
+        }
+        .btn-danger:hover {
+            background-color: #d32f2f;      /* Tom mais escuro ao passar o mouse */
+        }
+        .btn-primary {
+            background-color: #2196F3;     /* Botão azul para ações primárias */
+        }
+        .btn-primary:hover {
+            background-color: #0b7dda;      /* Tom mais escuro ao passar o mouse */
+        }
+        .message {
+            padding: 10px;                  /* Espaçamento interno */
+            margin: 10px 0;                 /* Margem vertical */
+            border-radius: 4px;             /* Bordas arredondadas */
+        }
+        .success {
+            background-color: #dff0d8;     /* Fundo verde claro para sucesso */
+            color: #3c763d;                /* Texto verde escuro */
+        }
+        .error {
+            background-color: #f2dede;     /* Fundo vermelho claro para erro */
+            color: #a94442;                /* Texto vermelho escuro */
+        }
+    </style>
+</head>
+<body>
+    <!-- Corpo do documento - conteúdo visível -->
+    <h1>CRUD com IndexedDB</h1>
+    <!-- Título principal -->
+    
+    <div id="message" class="message" style="display: none;"></div>
+    <!-- Container para mensagens de feedback (inicialmente oculto) -->
+    
+    <h2>Adicionar/Editar Cliente</h2>
+    <!-- Título da seção do formulário -->
+    <form id="clienteForm">
+        <!-- Formulário para adicionar/editar clientes -->
+        <input type="hidden" id="clienteId">
+        <!-- Campo oculto para armazenar o ID durante edições -->
+        <div class="form-group">
+            <!-- Grupo de campo para nome -->
+            <label for="nome">Nome:</label>
+            <!-- Label do campo -->
+            <input type="text" id="nome" required>
+            <!-- Campo de entrada obrigatório -->
+        </div>
+        <div class="form-group">
+            <!-- Grupo de campo para email -->
+            <label for="email">Email:</label>
+            <input type="email" id="email" required>
+            <!-- Campo de email com validação automática -->
+        </div>
+        <div class="form-group">
+            <!-- Grupo de campo para telefone -->
+            <label for="telefone">Telefone:</label>
+            <input type="text" id="telefone">
+            <!-- Campo opcional -->
+        </div>
+        <button type="submit" id="salvarBtn" class="btn-primary">Salvar</button>
+        <!-- Botão de submissão do formulário -->
+        <button type="button" id="cancelarBtn">Cancelar</button>
+        <!-- Botão para cancelar edição -->
+    </form>
+    
+    <h2>Lista de Clientes</h2>
+    <!-- Título da seção da tabela -->
+    <table id="clientesTable">
+        <!-- Tabela para exibir clientes -->
+        <thead>
+            <!-- Cabeçalho da tabela -->
+            <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Telefone</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Corpo da tabela (preenchido dinamicamente via JavaScript) -->
+        </tbody>
+    </table>
+
+    <script>
+        // =============================================
+        // CONFIGURAÇÃO INICIAL E VARIÁVEIS GLOBAIS
+        // =============================================
+        let db; // Variável para armazenar a conexão com o banco de dados
+        const dbName = 'ClientesDB'; // Nome do banco de dados
+        const dbVersion = 1; // Versão do banco de dados
+        const storeName = 'clientes'; // Nome do object store (similar a uma tabela)
+        
+        // =============================================
+        // FUNÇÕES DE INTERFACE E UTILITÁRIAS
+        // =============================================
+        
+        /**
+         * Exibe uma mensagem para o usuário
+         * @param {string} text - Texto da mensagem
+         * @param {string} type - Tipo da mensagem ('success' ou 'error')
+         */
+        function showMessage(text, type) {
+            const msgElement = document.getElementById('message');
+            msgElement.textContent = text; // Define o texto
+            msgElement.className = `message ${type}`; // Aplica a classe CSS
+            msgElement.style.display = 'block'; // Torna visível
+            
+            // Oculta a mensagem após 5 segundos
+            setTimeout(() => {
+                msgElement.style.display = 'none';
+            }, 5000);
+        }
+        
+        /**
+         * Limpa o formulário e reseta o estado
+         */
+        function limparFormulario() {
+            document.getElementById('clienteForm').reset(); // Reseta os campos
+            document.getElementById('clienteId').value = ''; // Limpa o ID oculto
+            document.getElementById('salvarBtn').textContent = 'Salvar'; // Volta texto do botão
+        }
+        
+        // =============================================
+        // FUNÇÕES DO BANCO DE DADOS (IndexedDB)
+        // =============================================
+        
+        /**
+         * Inicializa o banco de dados IndexedDB
+         * @returns {Promise} Promise que resolve quando o banco está pronto
+         */
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                // Abre ou cria o banco de dados
+                const request = indexedDB.open(dbName, dbVersion);
+                
+                // Tratamento de erro na abertura
+                request.onerror = (event) => {
+                    console.error('Erro ao abrir o banco de dados:', event.target.error);
+                    showMessage('Erro ao abrir o banco de dados', 'error');
+                    reject(event.target.error);
+                };
+                
+                // Sucesso na abertura
+                request.onsuccess = (event) => {
+                    db = event.target.result; // Armazena a conexão
+                    console.log('Banco de dados aberto com sucesso');
+                    resolve(db);
+                };
+                
+                // Se precisar criar/atualizar a estrutura
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    
+                    // Cria o object store (similar a uma tabela)
+                    const objectStore = db.createObjectStore(storeName, {
+                        keyPath: 'id', // Campo chave
+                        autoIncrement: true // Auto incremento do ID
+                    });
+                    
+                    // Cria índices para busca eficiente
+                    objectStore.createIndex('nome', 'nome', { unique: false });
+                    objectStore.createIndex('email', 'email', { unique: true }); // Email deve ser único
+                    objectStore.createIndex('telefone', 'telefone', { unique: false });
+                    
+                    console.log('Banco de dados criado/atualizado');
+                };
+            });
+        }
+        
+        /**
+         * Adiciona um novo cliente ao banco de dados
+         * @param {object} cliente - Objeto com dados do cliente
+         * @returns {Promise} Promise com o resultado da operação
+         */
+        function addCliente(cliente) {
+            return new Promise((resolve, reject) => {
+                // Inicia transação de escrita
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                
+                // Adiciona o cliente
+                const request = store.add(cliente);
+                
+                // Sucesso na operação
+                request.onsuccess = () => {
+                    resolve(request.result); // Retorna o ID gerado
+                };
+                
+                // Tratamento de erro
+                request.onerror = (event) => {
+                    if (event.target.error.name === 'ConstraintError') {
+                        showMessage('Já existe um cliente com este email', 'error');
+                    } else {
+                        showMessage('Erro ao adicionar cliente', 'error');
+                    }
+                    reject(event.target.error);
+                };
+            });
+        }
+        
+        /**
+         * Atualiza um cliente existente
+         * @param {object} cliente - Objeto com dados atualizados
+         * @returns {Promise} Promise com o resultado da operação
+         */
+        function updateCliente(cliente) {
+            return new Promise((resolve, reject) => {
+                // Inicia transação de escrita
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                
+                // Atualiza o cliente (put substitui o existente)
+                const request = store.put(cliente);
+                
+                // Sucesso na operação
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+                
+                // Tratamento de erro
+                request.onerror = (event) => {
+                    showMessage('Erro ao atualizar cliente', 'error');
+                    reject(event.target.error);
+                };
+            });
+        }
+        
+        /**
+         * Obtém todos os clientes do banco de dados
+         * @returns {Promise} Promise com array de clientes
+         */
+        function getAllClientes() {
+            return new Promise((resolve, reject) => {
+                // Inicia transação de leitura
+                const transaction = db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const clientes = []; // Array para armazenar resultados
+                
+                // Abre um cursor para percorrer todos os registros
+                const request = store.openCursor();
+                
+                // Sucesso no cursor
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        clientes.push(cursor.value); // Adiciona cliente ao array
+                        cursor.continue(); // Vai para o próximo
+                    } else {
+                        resolve(clientes); // Terminou, retorna todos os clientes
+                    }
+                };
+                
+                // Tratamento de erro
+                request.onerror = (event) => {
+                    showMessage('Erro ao carregar clientes', 'error');
+                    reject(event.target.error);
+                };
+            });
+        }
+        
+        /**
+         * Obtém um cliente específico pelo ID
+         * @param {number} id - ID do cliente
+         * @returns {Promise} Promise com o cliente encontrado
+         */
+        function getCliente(id) {
+            return new Promise((resolve, reject) => {
+                // Inicia transação de leitura
+                const transaction = db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                
+                // Busca o cliente pelo ID
+                const request = store.get(Number(id));
+                
+                // Sucesso na operação
+                request.onsuccess = () => {
+                    resolve(request.result); // Retorna o cliente
+                };
+                
+                // Tratamento de erro
+                request.onerror = (event) => {
+                    showMessage('Erro ao carregar cliente', 'error');
+                    reject(event.target.error);
+                };
+            });
+        }
+        
+        /**
+         * Remove um cliente do banco de dados
+         * @param {number} id - ID do cliente a ser removido
+         * @returns {Promise} Promise que resolve quando a operação é concluída
+         */
+        function deleteCliente(id) {
+            return new Promise((resolve, reject) => {
+                // Inicia transação de escrita
+                const transaction = db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                
+                // Remove o cliente pelo ID
+                const request = store.delete(Number(id));
+                
+                // Sucesso na operação
+                request.onsuccess = () => {
+                    resolve();
+                };
+                
+                // Tratamento de erro
+                request.onerror = (event) => {
+                    showMessage('Erro ao excluir cliente', 'error');
+                    reject(event.target.error);
+                };
+            });
+        }
+        
+        // =============================================
+        // FUNÇÕES DE CONTROLE DA APLICAÇÃO
+        // =============================================
+        
+        /**
+         * Carrega todos os clientes e exibe na tabela
+         */
+        async function carregarClientes() {
+            try {
+                // Obtém todos os clientes do banco
+                const clientes = await getAllClientes();
+                const tbody = document.querySelector('#clientesTable tbody');
+                tbody.innerHTML = ''; // Limpa a tabela
+                
+                // Para cada cliente, cria uma linha na tabela
+                clientes.forEach(cliente => {
+                    const tr = document.createElement('tr');
+                    
+                    // Preenche a linha com os dados do cliente
+                    tr.innerHTML = `
+                        <td>${cliente.id}</td>
+                        <td>${cliente.nome}</td>
+                        <td>${cliente.email}</td>
+                        <td>${cliente.telefone || '-'}</td>
+                        <td>
+                            <button onclick="editarCliente(${cliente.id})" class="btn-primary">Editar</button>
+                            <button onclick="excluirCliente(${cliente.id})" class="btn-danger">Excluir</button>
+                        </td>
+                    `;
+                    
+                    // Adiciona a linha à tabela
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar clientes:', error);
+            }
+        }
+        
+        /**
+         * Manipula o envio do formulário (adicionar/editar)
+         * @param {Event} e - Evento de submissão do formulário
+         */
+        async function salvarCliente(e) {
+            e.preventDefault(); // Impede o comportamento padrão do formulário
+            
+            // Obtém os valores dos campos
+            const id = document.getElementById('clienteId').value;
+            const nome = document.getElementById('nome').value;
+            const email = document.getElementById('email').value;
+            const telefone = document.getElementById('telefone').value;
+            
+            // Validação simples
+            if (!nome || !email) {
+                showMessage('Nome e email são obrigatórios', 'error');
+                return;
+            }
+            
+            // Cria objeto cliente
+            const cliente = { nome, email, telefone };
+            
+            try {
+                if (id) {
+                    // Se tem ID, é uma edição
+                    cliente.id = Number(id);
+                    await updateCliente(cliente);
+                    showMessage('Cliente atualizado com sucesso!', 'success');
+                } else {
+                    // Se não tem ID, é uma adição
+                    await addCliente(cliente);
+                    showMessage('Cliente adicionado com sucesso!', 'success');
+                }
+                
+                // Limpa o formulário e recarrega a lista
+                limparFormulario();
+                await carregarClientes();
+            } catch (error) {
+                console.error('Erro ao salvar cliente:', error);
+            }
+        }
+        
+        /**
+         * Preenche o formulário para edição de um cliente
+         * @param {number} id - ID do cliente a ser editado
+         */
+        async function editarCliente(id) {
+            try {
+                // Obtém o cliente do banco
+                const cliente = await getCliente(id);
+                
+                if (cliente) {
+                    // Preenche os campos do formulário
+                    document.getElementById('clienteId').value = cliente.id;
+                    document.getElementById('nome').value = cliente.nome;
+                    document.getElementById('email').value = cliente.email;
+                    document.getElementById('telefone').value = cliente.telefone || '';
+                    
+                    // Altera o texto do botão para "Atualizar"
+                    document.getElementById('salvarBtn').textContent = 'Atualizar';
+                }
+            } catch (error) {
+                console.error('Erro ao editar cliente:', error);
+            }
+        }
+        
+        /**
+         * Exclui um cliente após confirmação
+         * @param {number} id - ID do cliente a ser excluído
+         */
+        async function excluirCliente(id) {
+            // Confirmação antes de excluir
+            if (confirm('Tem certeza que deseja excluir este cliente?')) {
+                try {
+                    await deleteCliente(id);
+                    showMessage('Cliente excluído com sucesso!', 'success');
+                    await carregarClientes(); // Recarrega a lista
+                } catch (error) {
+                    console.error('Erro ao excluir cliente:', error);
+                }
+            }
+        }
+        
+        // =============================================
+        // INICIALIZAÇÃO DA APLICAÇÃO
+        // =============================================
+        
+        // Quando o DOM estiver completamente carregado
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Inicializa o banco de dados
+                await initDB();
+                // Carrega os clientes na tabela
+                await carregarClientes();
+                
+                // Adiciona listeners aos eventos
+                document.getElementById('clienteForm').addEventListener('submit', salvarCliente);
+                document.getElementById('cancelarBtn').addEventListener('click', limparFormulario);
+                
+                console.log('Aplicação inicializada com sucesso');
+            } catch (error) {
+                // Tratamento de erro na inicialização
+                console.error('Falha ao inicializar a aplicação:', error);
+                showMessage('Falha ao inicializar a aplicação. Verifique o console para mais detalhes.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>
